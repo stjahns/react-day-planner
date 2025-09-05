@@ -13,7 +13,7 @@ interface TaskItemProps {
   addItem: () => void;
 }
 
-function TaskItem({ task, onLabelChanged, onCompleteChanged, deleteItem, addItem }: TaskItemProps) {
+export function TaskItem({ task, onLabelChanged, onCompleteChanged, deleteItem, addItem }: TaskItemProps) {
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === "Backspace") {
@@ -50,7 +50,7 @@ export function AddTask({ onClick }: AddTaskProps) {
 }
 
 interface TaskListProps {
-  title: string;
+  title?: string;
 }
 
 export default function TaskList({ title = "Today" }: TaskListProps) {
@@ -59,7 +59,8 @@ export default function TaskList({ title = "Today" }: TaskListProps) {
   useEffect(() => {
     api.getTasks().then((data: Task[]) => {
       setTasks(data);
-    });
+    }).catch(error => console.log(error));
+    // TODO - how to handle failure? retry on a timer? use react query?
   }, []);
 
   const updateTaskState = (updatedTask: Partial<Task>) => {
@@ -90,12 +91,15 @@ export default function TaskList({ title = "Today" }: TaskListProps) {
   };
 
   const addTask = () => {
-    // FIXME - waiting for response feels slow, 
-    // but we need to know the unique key, unless we generated a GUID here on the client?
     api.addTask().then((newTask: Task) => {
       const newTasks = [...tasks, newTask];
       setTasks(newTasks);
-    });
+    }).catch(error => console.log(error));
+
+    // FIXME - waiting for response feels slow, 
+    // but we need to know the unique key, unless we generated a GUID here on the client?
+    // TODO - how should we handle API failure here?
+    // TODO - consider adding a spinner?
   };
 
   const deleteTask = (id: number) => {

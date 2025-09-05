@@ -5,5 +5,14 @@ import tsconfigPaths from "vite-tsconfig-paths";
 import devtoolsJson from "vite-plugin-devtools-json"
 
 export default defineConfig({
-  plugins: [tailwindcss(), reactRouter(), tsconfigPaths(), devtoolsJson()],
+  plugins: [
+    tailwindcss(),
+    !process.env.VITEST && reactRouter(),
+    tsconfigPaths(),
+    devtoolsJson()],
+  test: {
+    globals: true,
+    environment: "jsdom",
+    setupFiles: "./app/vitest.setup.ts",
+  },
 });
