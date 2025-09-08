@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useMutation, useQuery } from "@apollo/client/react";
 import { type Task } from '../api/tasks'; // FIXME, move elsewhere?
 import * as api from '../api/tasks';
+import { ADD_TASK, COMPLETE_TASK, DELETE_TASK, GET_TASKS, RELABEL_TASK } from '../api/graphql/tasks';
+import { gql } from '@apollo/client';
 
 // TODO - drag to reorder
 // TODO - delete button
@@ -15,9 +18,11 @@ interface TaskItemProps {
 
 export function TaskItem({ task, onLabelChanged, onCompleteChanged, deleteItem, addItem }: TaskItemProps) {
 
+  const [label, setLabel] = useState(task.label || "");
+
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === "Backspace") {
-      if (task.label.length === 0) {
+      if (label.length === 0) {
         deleteItem(task.id);
         // TODO - we want to focus the previous task item after deleting this one
       }
@@ -28,11 +33,16 @@ export function TaskItem({ task, onLabelChanged, onCompleteChanged, deleteItem, 
     }
   }
 
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setLabel(event.target.value);
+    onLabelChanged(event);
+  };
+
   return (
     <div className="flex">
       <input id={task.id.toString()} className="w-4 h-4 m-2"
         type="checkbox" checked={task.complete} onChange={onCompleteChanged} />
-      <input className="grow" id={task.id.toString()} type="textarea" value={task.label} onChange={onLabelChanged} onKeyDown={handleKeyDown} autoComplete='off' />
+      <input className="grow" id={task.id.toString()} type="textarea" value={label} onChange={handleChange} onKeyDown={handleKeyDown} autoComplete='off' />
     </div>
   )
 }
@@ -54,66 +64,64 @@ interface TaskListProps {
 }
 
 export default function TaskList({ title = "Today" }: TaskListProps) {
-  const [tasks, setTasks] = useState<Task[]>([]);
 
-  useEffect(() => {
-    api.getTasks().then((data: Task[]) => {
-      setTasks(data);
-    }).catch(error => console.log(error));
-    // TODO - how to handle failure? retry on a timer? use react query?
-  }, []);
+  const { loading, error, data } = useQuery(GET_TASKS);
+  const [mutateComplete] = useMutation(COMPLETE_TASK);
+  const [mutateLabel] = useMutation(RELABEL_TASK);
+  const [mutateAddTask] = useMutation(ADD_TASK, {
+    update(cache, { data }) {
 
-  const updateTaskState = (updatedTask: Partial<Task>) => {
-    const newTasks = tasks.map((task: Task) => {
-      if (task.id === updatedTask.id) {
-        return { ...task, ...updatedTask };
-      } else {
-        return task;
-      }
-    });
-    setTasks(newTasks);
-  }
+      const { tasks } = cache.readQuery({ query: GET_TASKS }) || { tasks: [] };
+      cache.writeQuery({
+        query: GET_TASKS,
+        data: {
+          tasks: [...tasks, { id: data?.addTask?.id, label: "", complete: false }] // need all fields otherwise it'll send another query to fill in
+        }
+      });
 
-  const editTask = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const partialTask = { id: Number(event.target.id), label: event.target.value };
-    api.updateTask(partialTask);
-    updateTaskState(partialTask);
-  };
+      // TODO - try to get this to work with cache.modify?
+      // TODO - can we make this optimistic?
+    }
+  });
+  const [mutateDeleteTask] = useMutation(DELETE_TASK, {
+    update(cache, { data }) {
 
-  const completeTask = (id: number, completed: boolean) => {
-    const partialTask = { id: id, complete: completed };
-    api.updateTask(partialTask);
-    updateTaskState(partialTask);
+      const { tasks } = cache.readQuery({ query: GET_TASKS }) || { tasks: [] };
+      cache.writeQuery({
+        query: GET_TASKS,
+        data: {
+          tasks: tasks.filter(({ id }) => id !== data?.deleteTask?.id)
+        }
+      });
+
+      // TODO - try to get this to work with cache.modify?
+      // TODO - can we make this optimistic?
+    }
+  });
+
+  if (error) return <p>Error : {error.message}</p>
+  if (loading) return <p>Loading...</p>
+
+  const labelChanged = (event: React.ChangeEvent<HTMLInputElement>) => {
+    mutateLabel({ variables: { id: Number(event.target.id), label: event.target.value } });
   };
 
   const completeChanged = (event: React.ChangeEvent<HTMLInputElement>) => {
-    completeTask(Number(event.target.id), event.target.checked);
+    mutateComplete({ variables: { id: Number(event.target.id), complete: event.target.checked } });
   };
 
   const addTask = () => {
-    api.addTask().then((newTask: Task) => {
-      const newTasks = [...tasks, newTask];
-      setTasks(newTasks);
-    }).catch(error => console.log(error));
-
-    // FIXME - waiting for response feels slow, 
-    // but we need to know the unique key, unless we generated a GUID here on the client?
-    // TODO - how should we handle API failure here?
-    // TODO - consider adding a spinner?
+    mutateAddTask();
   };
 
   const deleteTask = (id: number) => {
-    // FIXME - waiting for response feels slow
-    api.deleteTask(id).then(() => {
-      const newTasks = tasks.filter((task: Task) => task.id !== id);
-      setTasks(newTasks);
-    });
+    mutateDeleteTask({ variables: { id: id } });
   };
 
-  let taskItems = tasks.map((task: Task) =>
+  let taskItems = data?.tasks.map((task: Task) =>
     <TaskItem key={task.id}
       task={task}
-      onLabelChanged={editTask}
+      onLabelChanged={labelChanged}
       onCompleteChanged={completeChanged}
       deleteItem={deleteTask}
       addItem={addTask}
