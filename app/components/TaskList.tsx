@@ -9,6 +9,7 @@ import {
   GET_TASKS,
   RELABEL_TASK
 } from '../api/graphql/tasks';
+import { gql } from '@apollo/client';
 
 // TODO - drag to reorder
 // TODO - delete button
@@ -74,36 +75,46 @@ export default function TaskList({ title = "Today" }: TaskListProps) {
   const [mutateComplete] = useMutation(COMPLETE_TASK);
   const [mutateLabel] = useMutation(RELABEL_TASK);
   const [mutateAddTask] = useMutation(ADD_TASK, {
+    // TODO - can we make this optimistic?
     update(cache, { data }) {
 
-      const { tasks } = cache.readQuery({ query: GET_TASKS }) || { tasks: [] };
-      cache.writeQuery({
-        query: GET_TASKS,
-        data: {
-          // FIXME - why doesn't AddTaskMutation include all fields?
-          // Need all of them here to fully populate the cache entry, otherwise it'll 
-          // need to send another GET_TASKS request
-          tasks: [...tasks, { id: data?.addTask?.id, label: "", complete: false, createdAt: "", updatedAt: "" }]
-        }
-      });
+      // FIXME - why doesn't AddTaskMutation include all fields?
+      // Need all of them here to fully populate the cache entry, otherwise it'll 
+      // need to send another GET_TASKS request for them
+      const newTask = { __typename: "Task", id: data?.addTask?.id, label: "", complete: false, createdAt: "", updatedAt: "" };
 
-      // TODO - try to get this to work with cache.modify?
-      // TODO - can we make this optimistic?
-    }
+      cache.modify({
+        fields: {
+          tasks(existingTasks = []) {
+            const newTaskRef = cache.writeFragment({
+              data: newTask,
+              fragment: gql`
+                fragment NewTask on Task {
+                  id
+                  label
+                  complete
+                  createdAt
+                  updatedAt
+                }
+                `,
+            });
+            return [...existingTasks, newTaskRef];
+          },
+        },
+      });
+    },
   });
   const [mutateDeleteTask] = useMutation(DELETE_TASK, {
+    // TODO - can we make this optimistic?
     update(cache, { data }) {
-
-      const { tasks } = cache.readQuery({ query: GET_TASKS }) || { tasks: [] };
-      cache.writeQuery({
-        query: GET_TASKS,
-        data: {
-          tasks: tasks.filter(({ id }) => id !== data?.deleteTask?.id)
-        }
+      const idToRemove = data?.deleteTask?.id;
+      cache.modify({
+        fields: {
+          tasks(existingTasks, { readField }) {
+            return existingTasks.filter((taskRef: any) => idToRemove !== readField("id", taskRef));
+          },
+        },
       });
-
-      // TODO - try to get this to work with cache.modify?
-      // TODO - can we make this optimistic?
     }
   });
 
