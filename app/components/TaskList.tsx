@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from "@apollo/client/react";
-import { type Task } from '../api/tasks'; // FIXME, move elsewhere?
-import * as api from '../api/tasks';
-import { ADD_TASK, COMPLETE_TASK, DELETE_TASK, GET_TASKS, RELABEL_TASK } from '../api/graphql/tasks';
-import { gql } from '@apollo/client';
+//import { type Task } from '../api/tasks'; // FIXME, move elsewhere?
+import {
+  type Task,
+  ADD_TASK,
+  COMPLETE_TASK,
+  DELETE_TASK,
+  GET_TASKS,
+  RELABEL_TASK
+} from '../api/graphql/tasks';
 
 // TODO - drag to reorder
 // TODO - delete button
@@ -12,7 +17,7 @@ interface TaskItemProps {
   task: Task;
   onLabelChanged: React.ChangeEventHandler<HTMLInputElement>;
   onCompleteChanged: React.ChangeEventHandler<HTMLInputElement>;
-  deleteItem: (id: number) => void;
+  deleteItem: (id: string) => void;
   addItem: () => void;
 }
 
@@ -41,7 +46,7 @@ export function TaskItem({ task, onLabelChanged, onCompleteChanged, deleteItem, 
   return (
     <div className="flex">
       <input id={task.id.toString()} className="w-4 h-4 m-2"
-        type="checkbox" checked={task.complete} onChange={onCompleteChanged} />
+        type="checkbox" checked={task.complete || false} onChange={onCompleteChanged} />
       <input className="grow" id={task.id.toString()} type="textarea" value={label} onChange={handleChange} onKeyDown={handleKeyDown} autoComplete='off' />
     </div>
   )
@@ -75,7 +80,10 @@ export default function TaskList({ title = "Today" }: TaskListProps) {
       cache.writeQuery({
         query: GET_TASKS,
         data: {
-          tasks: [...tasks, { id: data?.addTask?.id, label: "", complete: false }] // need all fields otherwise it'll send another query to fill in
+          // FIXME - why doesn't AddTaskMutation include all fields?
+          // Need all of them here to fully populate the cache entry, otherwise it'll 
+          // need to send another GET_TASKS request
+          tasks: [...tasks, { id: data?.addTask?.id, label: "", complete: false, createdAt: "", updatedAt: "" }]
         }
       });
 
@@ -103,18 +111,18 @@ export default function TaskList({ title = "Today" }: TaskListProps) {
   if (loading) return <p>Loading...</p>
 
   const labelChanged = (event: React.ChangeEvent<HTMLInputElement>) => {
-    mutateLabel({ variables: { id: Number(event.target.id), label: event.target.value } });
+    mutateLabel({ variables: { id: event.target.id, label: event.target.value } });
   };
 
   const completeChanged = (event: React.ChangeEvent<HTMLInputElement>) => {
-    mutateComplete({ variables: { id: Number(event.target.id), complete: event.target.checked } });
+    mutateComplete({ variables: { id: event.target.id, complete: event.target.checked } });
   };
 
   const addTask = () => {
     mutateAddTask();
   };
 
-  const deleteTask = (id: number) => {
+  const deleteTask = (id: string) => {
     mutateDeleteTask({ variables: { id: id } });
   };
 
